@@ -29,9 +29,10 @@ public class MainActivity extends Activity {
     private Spinner mainSpin,subSpin;
     private LinearLayout cards;
     private TextView status;
-    private CheckBox onlyNew;
+    private Button tabNew,tabShared;
     private int selected=0,page=0;
     private boolean end=false;
+    private boolean showShared=false;
 
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
@@ -45,17 +46,42 @@ public class MainActivity extends Activity {
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(12),dp(10),dp(12),dp(10));
         TextView title=t("غندور • مشاركة البطاقات",23); title.setGravity(Gravity.CENTER); root.addView(title,mw());
         mainSpin=new Spinner(this); subSpin=new Spinner(this); root.addView(mainSpin,mw()); root.addView(subSpin,mw());
-        onlyNew=new CheckBox(this); onlyNew.setText("اعرض غير المنشورة فقط"); onlyNew.setChecked(true); root.addView(onlyNew,mw());
+
+        LinearLayout tabs=new LinearLayout(this);
+        tabNew=b("غير منشورة");
+        tabShared=b("تم نشرها");
+        tabNew.setOnClickListener(v->setTab(false));
+        tabShared.setOnClickListener(v->setTab(true));
+        tabs.addView(tabNew,new LinearLayout.LayoutParams(0,dp(48),1));
+        LinearLayout.LayoutParams tsp=new LinearLayout.LayoutParams(0,dp(48),1); tsp.setMarginStart(dp(6));
+        tabs.addView(tabShared,tsp);
+        root.addView(tabs,mw());
+        updateTabs();
+
         LinearLayout tools=new LinearLayout(this);
         Button refresh=b("تحديث"); refresh.setOnClickListener(v->reload()); tools.addView(refresh,new LinearLayout.LayoutParams(0,dp(46),1));
-        Button reset=b("تصفير سجل النشر"); reset.setOnClickListener(v->{shared.clear();save();reload();}); LinearLayout.LayoutParams rlp=new LinearLayout.LayoutParams(0,dp(46),1); rlp.setMarginStart(dp(6)); tools.addView(reset,rlp); root.addView(tools,mw());
+        Button reset=b("تصفير سجل النشر"); reset.setOnClickListener(v->{shared.clear();save();updateTabs();reload();}); LinearLayout.LayoutParams rlp=new LinearLayout.LayoutParams(0,dp(46),1); rlp.setMarginStart(dp(6)); tools.addView(reset,rlp); root.addView(tools,mw());
+
         status=t("جاري التحميل…",14); root.addView(status,mw());
         ScrollView sv=new ScrollView(this); cards=new LinearLayout(this); cards.setOrientation(LinearLayout.VERTICAL); sv.addView(cards,mw()); root.addView(sv,new LinearLayout.LayoutParams(-1,0,1));
         Button more=b("تحميل المزيد"); more.setOnClickListener(v->loadCards()); more.setTag("more"); root.addView(more,new LinearLayout.LayoutParams(-1,dp(50)));
+
         mainSpin.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int pos,long id){if(pos<mains.size())loadSubs(mains.get(pos).id);}public void onNothingSelected(AdapterView<?> p){}});
         subSpin.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int pos,long id){if(pos<subs.size()){selected=subs.get(pos).id;reload();}}public void onNothingSelected(AdapterView<?> p){}});
-        onlyNew.setOnCheckedChangeListener((v,c)->reload());
         return root;
+    }
+
+    private void setTab(boolean published){
+        if(showShared==published)return;
+        showShared=published;
+        updateTabs();
+        reload();
+    }
+
+    private void updateTabs(){
+        if(tabNew==null||tabShared==null)return;
+        tabNew.setText(showShared?"غير منشورة":"✓ غير منشورة");
+        tabShared.setText((showShared?"✓ ":"")+"تم نشرها ("+shared.size()+")");
     }
 
     private void loadMain(){
@@ -78,12 +104,16 @@ public class MainActivity extends Activity {
         }catch(Exception e){err(e);}});
     }
 
-    private void reload(){if(selected<=0)return;page=0;end=false;cards.removeAllViews();showMore(true);loadCards();}
+    private void reload(){
+        if(selected<=0)return;
+        page=0;end=false;cards.removeAllViews();showMore(true);loadCards();
+    }
 
     private void loadCards(){
         if(selected<=0||end)return;
         int cat=selected,next=page+1;
-        status.setText("جاري تحميل البطاقات…");
+        boolean publishedMode=showShared;
+        status.setText(publishedMode?"جاري تحميل ما تم نشره…":"جاري تحميل البطاقات غير المنشورة…");
         ex.execute(()->{try{
             String url=BASE+"get_share_cards.php?category_id="+cat+"&page="+next+"&limit="+PAGE_SIZE;
             JSONObject o=new JSONObject(ApiClient.getText(url));
@@ -96,16 +126,21 @@ public class MainActivity extends Activity {
                 String u=x.optString("image");
                 if(blank(u))u=x.optString("image_default");
                 u=imageUrl(u);
-                if(id>0&&!u.isEmpty()&&(!onlyNew.isChecked()||!shared.contains(String.valueOf(id)))) list.add(new Card(id,u));
+                boolean wasShared=shared.contains(String.valueOf(id));
+                if(id>0&&!u.isEmpty()&&(publishedMode?wasShared:!wasShared)) list.add(new Card(id,u));
             }
             boolean last=pagination!=null?!pagination.optBoolean("has_more",false):(a==null||a.length()<PAGE_SIZE);
             runOnUiThread(()->{
-                if(cat!=selected)return;
+                if(cat!=selected||publishedMode!=showShared)return;
                 page=next; end=last;
                 for(Card c:list)cards.addView(cardView(c),margin());
-                status.setText(list.isEmpty()&&last?"لا توجد بطاقات غير منشورة":"تم التحميل • المنشور على هذا الهاتف: "+shared.size());
+                if(list.isEmpty()&&last){
+                    status.setText(publishedMode?"لا توجد بطاقات تم نشرها في هذا التصنيف":"لا توجد بطاقات غير منشورة في هذا التصنيف");
+                }else{
+                    status.setText(publishedMode?"تم نشرها على هذا الهاتف: "+shared.size():"غير منشورة • إجمالي سجل النشر: "+shared.size());
+                }
                 showMore(!end);
-                if(onlyNew.isChecked()&&list.isEmpty()&&!end)loadCards();
+                if(list.isEmpty()&&!end)loadCards();
             });
         }catch(Exception e){err(e);}});
     }
@@ -114,14 +149,27 @@ public class MainActivity extends Activity {
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(8),dp(8),dp(8),dp(8));
         TextView id=t("بطاقة #"+c.id+(shared.contains(String.valueOf(c.id))?" ✓":""),15);box.addView(id,mw());
         ImageView img=new ImageView(this);img.setAdjustViewBounds(true);img.setMinimumHeight(dp(220));img.setScaleType(ImageView.ScaleType.FIT_CENTER);box.addView(img,mw());loadImage(c.url,img);
+
         LinearLayout row=new LinearLayout(this);
         Button wa=b("واتساب");wa.setOnClickListener(v->share(c,new String[]{"com.whatsapp","com.whatsapp.w4b"}));row.addView(wa,w());
         Button tg=b("تليجرام");tg.setOnClickListener(v->share(c,new String[]{"org.telegram.messenger","org.telegram.messenger.web"}));LinearLayout.LayoutParams lp=w();lp.setMarginStart(dp(5));row.addView(tg,lp);
         Button any=b("مشاركة");any.setOnClickListener(v->share(c,null));LinearLayout.LayoutParams ap=w();ap.setMarginStart(dp(5));row.addView(any,ap);box.addView(row,mw());
+
+        if(showShared){
+            Button unpublish=b("إرجاع لغير منشورة");
+            unpublish.setOnClickListener(v->{shared.remove(String.valueOf(c.id));save();updateTabs();reload();});
+            LinearLayout.LayoutParams up=mw();up.topMargin=dp(5);box.addView(unpublish,up);
+        }
         return box;
     }
 
-    private void loadImage(String u,ImageView iv){ex.execute(()->{try{byte[] d=ApiClient.getBytes(u).data;Bitmap bm=BitmapFactory.decodeByteArray(d,0,d.length);runOnUiThread(()->iv.setImageBitmap(bm));}catch(Exception ignored){}});}
+    private void loadImage(String u,ImageView iv){
+        ex.execute(()->{try{
+            byte[] d=ApiClient.getBytes(u).data;
+            Bitmap bm=BitmapFactory.decodeByteArray(d,0,d.length);
+            runOnUiThread(()->iv.setImageBitmap(bm));
+        }catch(Exception ignored){}});
+    }
 
     private void share(Card c,String[] pkgs){
         Toast.makeText(this,"جاري تجهيز الصورة…",Toast.LENGTH_SHORT).show();
@@ -137,10 +185,24 @@ public class MainActivity extends Activity {
     }
 
     private void launch(int id,Uri uri,String mime,String[] pkgs){
-        Intent base=new Intent(Intent.ACTION_SEND);base.setType(mime);base.putExtra(Intent.EXTRA_STREAM,uri);base.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);boolean ok=false;
-        if(pkgs!=null)for(String p:pkgs){try{Intent x=new Intent(base);x.setPackage(p);startActivity(x);ok=true;break;}catch(ActivityNotFoundException ignored){}}
+        Intent base=new Intent(Intent.ACTION_SEND);
+        base.setType(mime);
+        base.putExtra(Intent.EXTRA_STREAM,uri);
+        base.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        boolean ok=false;
+
+        if(pkgs!=null)for(String p:pkgs){
+            try{Intent x=new Intent(base);x.setPackage(p);startActivity(x);ok=true;break;}
+            catch(ActivityNotFoundException ignored){}
+        }
         if(!ok){try{startActivity(Intent.createChooser(base,"انشر البطاقة عبر"));ok=true;}catch(Exception ignored){}}
-        if(ok){shared.add(String.valueOf(id));save();if(onlyNew.isChecked())reload();}
+
+        if(ok){
+            shared.add(String.valueOf(id));
+            save();
+            updateTabs();
+            if(!showShared)reload();
+        }
     }
 
     private boolean blank(String s){return s==null||s.isEmpty()||"null".equalsIgnoreCase(s);}
