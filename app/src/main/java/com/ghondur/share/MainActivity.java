@@ -10,7 +10,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.*;
 import androidx.core.content.FileProvider;
 import org.json.JSONArray;
@@ -23,6 +22,7 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final String BASE="https://ghondur.com/flutter_app/api/";
+    private static final int PAGE_SIZE=20;
     private final ExecutorService ex=Executors.newFixedThreadPool(4);
     private final List<Cat> mains=new ArrayList<>(), subs=new ArrayList<>();
     private Set<String> shared;
@@ -34,9 +34,11 @@ public class MainActivity extends Activity {
     private boolean end=false;
 
     @Override public void onCreate(Bundle b){
-        super.onCreate(b); getWindow().getDecorView().setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        super.onCreate(b);
+        getWindow().getDecorView().setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         shared=new HashSet<>(getSharedPreferences("share",MODE_PRIVATE).getStringSet("ids",new HashSet<>()));
-        setContentView(ui()); loadMain();
+        setContentView(ui());
+        loadMain();
     }
 
     private View ui(){
@@ -49,7 +51,7 @@ public class MainActivity extends Activity {
         Button reset=b("تصفير سجل النشر"); reset.setOnClickListener(v->{shared.clear();save();reload();}); LinearLayout.LayoutParams rlp=new LinearLayout.LayoutParams(0,dp(46),1); rlp.setMarginStart(dp(6)); tools.addView(reset,rlp); root.addView(tools,mw());
         status=t("جاري التحميل…",14); root.addView(status,mw());
         ScrollView sv=new ScrollView(this); cards=new LinearLayout(this); cards.setOrientation(LinearLayout.VERTICAL); sv.addView(cards,mw()); root.addView(sv,new LinearLayout.LayoutParams(-1,0,1));
-        Button more=b("تحميل المزيد"); more.setOnClickListener(v->loadCards()); root.addView(more,new LinearLayout.LayoutParams(-1,dp(50))); more.setTag("more");
+        Button more=b("تحميل المزيد"); more.setOnClickListener(v->loadCards()); more.setTag("more"); root.addView(more,new LinearLayout.LayoutParams(-1,dp(50)));
         mainSpin.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int pos,long id){if(pos<mains.size())loadSubs(mains.get(pos).id);}public void onNothingSelected(AdapterView<?> p){}});
         subSpin.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int pos,long id){if(pos<subs.size()){selected=subs.get(pos).id;reload();}}public void onNothingSelected(AdapterView<?> p){}});
         onlyNew.setOnCheckedChangeListener((v,c)->reload());
@@ -57,18 +59,55 @@ public class MainActivity extends Activity {
     }
 
     private void loadMain(){
-        status.setText("جاري تحميل التصنيفات…"); ex.execute(()->{try{JSONObject o=new JSONObject(ApiClient.getText(BASE+"get_main_categories.php")); List<Cat> a=parse(o.optJSONArray("data")); runOnUiThread(()->{mains.clear();mains.addAll(a);mainSpin.setAdapter(adapter(a));status.setText(a.isEmpty()?"لا توجد تصنيفات":"اختار التصنيف");});}catch(Exception e){err(e);}});
+        status.setText("جاري تحميل التصنيفات…");
+        ex.execute(()->{try{
+            JSONObject o=new JSONObject(ApiClient.getText(BASE+"get_main_categories.php"));
+            List<Cat> a=parse(o.optJSONArray("data"));
+            runOnUiThread(()->{mains.clear();mains.addAll(a);mainSpin.setAdapter(adapter(a));status.setText(a.isEmpty()?"لا توجد تصنيفات":"اختار التصنيف");});
+        }catch(Exception e){err(e);}});
     }
 
     private void loadSubs(int parent){
-        status.setText("جاري تحميل التصنيفات الفرعية…"); ex.execute(()->{try{JSONObject o=new JSONObject(ApiClient.getText(BASE+"get_subcategories.php?parent_id="+parent)); List<Cat> a=parse(o.optJSONArray("data")); if(a.isEmpty()){for(Cat c:mains)if(c.id==parent){a.add(new Cat(parent,c.name));break;}} List<Cat> f=a; runOnUiThread(()->{subs.clear();subs.addAll(f);subSpin.setAdapter(adapter(f));if(!f.isEmpty()){selected=f.get(0).id;reload();}});}catch(Exception e){err(e);}});
+        status.setText("جاري تحميل التصنيفات الفرعية…");
+        ex.execute(()->{try{
+            JSONObject o=new JSONObject(ApiClient.getText(BASE+"get_subcategories.php?parent_id="+parent));
+            List<Cat> a=parse(o.optJSONArray("data"));
+            if(a.isEmpty()){for(Cat c:mains)if(c.id==parent){a.add(new Cat(parent,c.name));break;}}
+            List<Cat> f=a;
+            runOnUiThread(()->{subs.clear();subs.addAll(f);subSpin.setAdapter(adapter(f));if(!f.isEmpty()){selected=f.get(0).id;reload();}});
+        }catch(Exception e){err(e);}});
     }
 
-    private void reload(){if(selected<=0)return;page=0;end=false;cards.removeAllViews();loadCards();}
+    private void reload(){if(selected<=0)return;page=0;end=false;cards.removeAllViews();showMore(true);loadCards();}
 
     private void loadCards(){
-        if(selected<=0||end)return; int cat=selected,next=page+1; status.setText("جاري تحميل البطاقات…");
-        ex.execute(()->{try{JSONObject o=new JSONObject(ApiClient.getText(BASE+"get_cards.php?category_id="+cat+"&page="+next)); JSONArray a=o.optJSONArray("data"); List<Card> list=new ArrayList<>(); if(a!=null)for(int i=0;i<a.length();i++){JSONObject x=a.optJSONObject(i); if(x==null)continue; int id=x.optInt("id"); String u=x.optString("image_mid"); if(u.isEmpty()||"null".equalsIgnoreCase(u))u=x.optString("image_default"); u=imageUrl(u); if(id>0&&!u.isEmpty()&&(!onlyNew.isChecked()||!shared.contains(String.valueOf(id))))list.add(new Card(id,u));} boolean last=a==null||a.length()<10; runOnUiThread(()->{if(cat!=selected)return;page=next;end=last;for(Card c:list)cards.addView(cardView(c),margin());status.setText(list.isEmpty()&&last?"لا توجد بطاقات غير منشورة":"تم التحميل • المنشور على هذا الهاتف: "+shared.size()); View more=findViewWithTag(rootView(),"more"); if(more!=null)more.setVisibility(end?View.GONE:View.VISIBLE);});}catch(Exception e){err(e);}});
+        if(selected<=0||end)return;
+        int cat=selected,next=page+1;
+        status.setText("جاري تحميل البطاقات…");
+        ex.execute(()->{try{
+            String url=BASE+"get_share_cards.php?category_id="+cat+"&page="+next+"&limit="+PAGE_SIZE;
+            JSONObject o=new JSONObject(ApiClient.getText(url));
+            JSONArray a=o.optJSONArray("data");
+            JSONObject pagination=o.optJSONObject("pagination");
+            List<Card> list=new ArrayList<>();
+            if(a!=null)for(int i=0;i<a.length();i++){
+                JSONObject x=a.optJSONObject(i); if(x==null)continue;
+                int id=x.optInt("id");
+                String u=x.optString("image");
+                if(blank(u))u=x.optString("image_default");
+                u=imageUrl(u);
+                if(id>0&&!u.isEmpty()&&(!onlyNew.isChecked()||!shared.contains(String.valueOf(id)))) list.add(new Card(id,u));
+            }
+            boolean last=pagination!=null?!pagination.optBoolean("has_more",false):(a==null||a.length()<PAGE_SIZE);
+            runOnUiThread(()->{
+                if(cat!=selected)return;
+                page=next; end=last;
+                for(Card c:list)cards.addView(cardView(c),margin());
+                status.setText(list.isEmpty()&&last?"لا توجد بطاقات غير منشورة":"تم التحميل • المنشور على هذا الهاتف: "+shared.size());
+                showMore(!end);
+                if(onlyNew.isChecked()&&list.isEmpty()&&!end)loadCards();
+            });
+        }catch(Exception e){err(e);}});
     }
 
     private View cardView(Card c){
@@ -77,14 +116,24 @@ public class MainActivity extends Activity {
         ImageView img=new ImageView(this);img.setAdjustViewBounds(true);img.setMinimumHeight(dp(220));img.setScaleType(ImageView.ScaleType.FIT_CENTER);box.addView(img,mw());loadImage(c.url,img);
         LinearLayout row=new LinearLayout(this);
         Button wa=b("واتساب");wa.setOnClickListener(v->share(c,new String[]{"com.whatsapp","com.whatsapp.w4b"}));row.addView(wa,w());
-        Button tg=b("تليجرام");tg.setOnClickListener(v->share(c,new String[]{"org.telegram.messenger"}));LinearLayout.LayoutParams lp=w();lp.setMarginStart(dp(5));row.addView(tg,lp);
-        Button any=b("مشاركة");any.setOnClickListener(v->share(c,null));LinearLayout.LayoutParams ap=w();ap.setMarginStart(dp(5));row.addView(any,ap);box.addView(row,mw());return box;
+        Button tg=b("تليجرام");tg.setOnClickListener(v->share(c,new String[]{"org.telegram.messenger","org.telegram.messenger.web"}));LinearLayout.LayoutParams lp=w();lp.setMarginStart(dp(5));row.addView(tg,lp);
+        Button any=b("مشاركة");any.setOnClickListener(v->share(c,null));LinearLayout.LayoutParams ap=w();ap.setMarginStart(dp(5));row.addView(any,ap);box.addView(row,mw());
+        return box;
     }
 
     private void loadImage(String u,ImageView iv){ex.execute(()->{try{byte[] d=ApiClient.getBytes(u).data;Bitmap bm=BitmapFactory.decodeByteArray(d,0,d.length);runOnUiThread(()->iv.setImageBitmap(bm));}catch(Exception ignored){}});}
 
     private void share(Card c,String[] pkgs){
-        Toast.makeText(this,"جاري تجهيز الصورة…",Toast.LENGTH_SHORT).show(); ex.execute(()->{try{ApiClient.DownloadedFile d=ApiClient.getBytes(c.url);String mime=(d.contentType!=null&&d.contentType.startsWith("image/"))?d.contentType.split(";")[0]:"image/jpeg";File dir=new File(getCacheDir(),"shared");dir.mkdirs();File f=new File(dir,"ghondur_"+c.id+(mime.contains("png")?".png":".jpg"));try(FileOutputStream out=new FileOutputStream(f)){out.write(d.data);}Uri uri=FileProvider.getUriForFile(this,getPackageName()+".fileprovider",f);runOnUiThread(()->launch(c.id,uri,mime,pkgs));}catch(Exception e){err(e);}});
+        Toast.makeText(this,"جاري تجهيز الصورة…",Toast.LENGTH_SHORT).show();
+        ex.execute(()->{try{
+            ApiClient.DownloadedFile d=ApiClient.getBytes(c.url);
+            String mime=(d.contentType!=null&&d.contentType.startsWith("image/"))?d.contentType.split(";")[0]:"image/jpeg";
+            File dir=new File(getCacheDir(),"shared");dir.mkdirs();
+            File f=new File(dir,"ghondur_"+c.id+(mime.contains("png")?".png":".jpg"));
+            try(FileOutputStream out=new FileOutputStream(f)){out.write(d.data);}
+            Uri uri=FileProvider.getUriForFile(this,getPackageName()+".fileprovider",f);
+            runOnUiThread(()->launch(c.id,uri,mime,pkgs));
+        }catch(Exception e){err(e);}});
     }
 
     private void launch(int id,Uri uri,String mime,String[] pkgs){
@@ -94,13 +143,13 @@ public class MainActivity extends Activity {
         if(ok){shared.add(String.valueOf(id));save();if(onlyNew.isChecked())reload();}
     }
 
-    private String imageUrl(String u){if(u==null||u.isEmpty()||"null".equalsIgnoreCase(u))return "";u=u.replace(" ","%20");if(u.startsWith("http://")||u.startsWith("https://"))return u;return "https://ghondur.com/uploads/images/"+u;}
+    private boolean blank(String s){return s==null||s.isEmpty()||"null".equalsIgnoreCase(s);}
+    private String imageUrl(String u){if(blank(u))return "";u=u.replace(" ","%20");if(u.startsWith("http://")||u.startsWith("https://"))return u;return "https://ghondur.com/uploads/images/"+u;}
     private List<Cat> parse(JSONArray a){List<Cat> r=new ArrayList<>();if(a==null)return r;for(int i=0;i<a.length();i++){JSONObject o=a.optJSONObject(i);if(o!=null&&o.optInt("id")>0)r.add(new Cat(o.optInt("id"),o.optString("name","تصنيف")));}return r;}
     private ArrayAdapter<String> adapter(List<Cat> a){List<String> n=new ArrayList<>();for(Cat c:a)n.add(c.name);return new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,n);}
     private void save(){SharedPreferences p=getSharedPreferences("share",MODE_PRIVATE);p.edit().putStringSet("ids",new HashSet<>(shared)).apply();}
+    private void showMore(boolean show){View v=getWindow().getDecorView().findViewWithTag("more");if(v!=null)v.setVisibility(show?View.VISIBLE:View.GONE);}
     private void err(Exception e){runOnUiThread(()->{status.setText("خطأ: "+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage()));Toast.makeText(this,status.getText(),Toast.LENGTH_LONG).show();});}
-    private View rootView(){return getWindow().getDecorView();}
-    private View findViewWithTag(View v,String tag){return v.findViewWithTag(tag);}
     private TextView t(String s,int z){TextView v=new TextView(this);v.setText(s);v.setTextSize(z);v.setPadding(0,dp(5),0,dp(5));return v;}
     private Button b(String s){Button x=new Button(this);x.setText(s);x.setAllCaps(false);return x;}
     private LinearLayout.LayoutParams mw(){return new LinearLayout.LayoutParams(-1,-2);}
