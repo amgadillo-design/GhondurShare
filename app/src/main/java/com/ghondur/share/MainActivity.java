@@ -22,7 +22,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private static final String BASE="https://ghondur.com/api/";
+    private static final String BASE="https://ghondur.com/flutter_app/api/";
     private final ExecutorService ex=Executors.newFixedThreadPool(4);
     private final List<Cat> mains=new ArrayList<>(), subs=new ArrayList<>();
     private Set<String> shared;
