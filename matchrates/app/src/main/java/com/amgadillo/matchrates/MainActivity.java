@@ -49,21 +49,30 @@ public class MainActivity extends Activity {
         root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         scroll.addView(root);
 
-        TextView title = label("مباريات اليوم والعملات", 24, Color.WHITE);
+        TextView title = label("مبارياتي والعملات", 24, Color.WHITE);
         title.setTypeface(null, 1);
         root.addView(title);
 
-        TextView intro = label(
-                "يعرض كل مباريات كرة القدم اليوم تلقائيًا، بدون اختيار فرق وبدون أخبار، مع أسعار العملات.",
-                15, Color.rgb(190, 202, 220));
-        root.addView(intro);
+        root.addView(label("⚽ الفرق الثابتة", 17, Color.rgb(159, 195, 255)));
+        root.addView(label(
+                "الزمالك • الأهلي المصري • بيراميدز • برشلونة • ريال مدريد • طرابزون سبور",
+                15, Color.WHITE));
 
-        TextView allMatches = label(
-                "⚽ المباريات: كل مباريات اليوم تلقائيًا. الـWidget تعرض أول 8 مباريات، وإذا كان العدد أكبر يظهر عدد المباريات المتبقية.",
-                15, Color.rgb(159, 195, 255));
-        root.addView(allMatches);
+        root.addView(label("🏆 البطولات الثابتة", 17, Color.rgb(159, 195, 255)));
+        root.addView(label(
+                "أمم أفريقيا + التصفيات\n" +
+                "أمم آسيا + التصفيات\n" +
+                "أمم أوروبا + التصفيات\n" +
+                "كأس العالم + تصفيات كل القارات\n" +
+                "دوري أبطال أفريقيا وأوروبا\n" +
+                "كأس الكونفدرالية الأفريقية + الدوري الأوروبي",
+                15, Color.WHITE));
 
-        root.addView(label("أزواج العملات", 16, Color.rgb(159, 195, 255)));
+        root.addView(label(
+                "أي مباراة تخص فريقًا من الفرق الستة تظهر حتى لو كانت خارج البطولات السابقة، وأي مباراة ضمن البطولات السابقة تظهر حتى لو لم يكن أحد الفرق الستة مشاركًا فيها.",
+                13, Color.rgb(190, 202, 220)));
+
+        root.addView(label("💱 أزواج العملات", 16, Color.rgb(159, 195, 255)));
         pairsInput = new EditText(this);
         pairsInput.setHint("USD/SAR\nUSD/EGP\nSAR/EGP\nEUR/SAR");
         pairsInput.setHintTextColor(Color.rgb(120, 140, 165));
@@ -86,7 +95,7 @@ public class MainActivity extends Activity {
         root.addView(pin, pinParams);
 
         TextView note = label(
-                "التحديث التلقائي كل 30 دقيقة، ويمكنك الضغط على ↻ في الـWidget للتحديث الفوري. بيانات المباريات تعتمد على واجهة SofaScore العامة غير الرسمية، وأسعار العملات من Frankfurter.",
+                "التحديث التلقائي كل 30 دقيقة، ويمكن الضغط على ↻ للتحديث الفوري. المباريات من ESPN، والعملات من Frankfurter.",
                 12, Color.rgb(128, 144, 168));
         root.addView(note);
 
@@ -108,7 +117,7 @@ public class MainActivity extends Activity {
                         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
                 manager.requestPinAppWidget(provider, null, success);
             } else {
-                Toast.makeText(this, "اضغط مطولًا على الشاشة الرئيسية ← Widgets ← مباريات اليوم والعملات", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "اضغط مطولًا على الشاشة الرئيسية ← Widgets ← مبارياتي والعملات", Toast.LENGTH_LONG).show();
             }
         });
 
