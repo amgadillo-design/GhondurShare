@@ -21,9 +21,16 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.TimeZone;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 public class MatchRatesWidget extends AppWidgetProvider {
     public static final String ACTION_REFRESH = "com.amgadillo.matchrates.REFRESH";
@@ -33,6 +40,43 @@ public class MatchRatesWidget extends AppWidgetProvider {
             R.id.match5, R.id.match6, R.id.match7, R.id.match8
     };
     private static final int[] RATE_IDS = {R.id.rate1, R.id.rate2, R.id.rate3, R.id.rate4};
+
+    private static final String[][] TRACKED_TEAMS = {
+            {"zamalek"},
+            {"al ahly", "al-ahly", "ahly cairo"},
+            {"pyramids", "pyramids fc"},
+            {"barcelona"},
+            {"real madrid"},
+            {"trabzonspor", "trabzon"}
+    };
+
+    private static final String[] TRACKED_COMPETITIONS = {
+            "caf.nations",
+            "caf.nations_qual",
+            "afc.asian.cup",
+            "afc.cupq",
+            "uefa.euro",
+            "uefa.euroq",
+            "fifa.world",
+            "fifa.worldq.uefa",
+            "fifa.worldq.caf",
+            "fifa.worldq.afc",
+            "fifa.worldq.conmebol",
+            "fifa.worldq.concacaf",
+            "fifa.worldq.ofc",
+            "fifa.worldq.interconf",
+            "caf.champions",
+            "uefa.champions",
+            "caf.confed",
+            "uefa.europa"
+    };
+
+    private static final String[] TEAM_FALLBACK_COMPETITIONS = {
+            "egy.1",
+            "esp.1",
+            "tur.1",
+            "fifa.cwc"
+    };
 
     public static void requestRefresh(Context context) {
         Intent i = new Intent(context, MatchRatesWidget.class);
@@ -89,8 +133,9 @@ public class MatchRatesWidget extends AppWidgetProvider {
             RemoteViews rv = baseViews(context);
             fillMatchLines(rv, matches);
             fillLines(rv, RATE_IDS, rates, "لا توجد أزواج عملات صالحة");
+
             String footer = error == null
-                    ? "مباريات اليوم: " + matches.size() + " • آخر تحديث: " + nowTime()
+                    ? "المتابعة اليوم: " + matches.size() + " • آخر تحديث: " + nowTime()
                     : error + " • اضغط ↻";
             rv.setTextViewText(R.id.footer, footer);
             manager.updateAppWidget(id, rv);
@@ -121,7 +166,7 @@ public class MatchRatesWidget extends AppWidgetProvider {
         for (int id : RATE_IDS) rv.setViewVisibility(id, View.GONE);
 
         rv.setViewVisibility(R.id.match1, View.VISIBLE);
-        rv.setTextViewText(R.id.match1, "جارٍ تحديث كل مباريات اليوم...");
+        rv.setTextViewText(R.id.match1, "جارٍ تحديث المباريات المتابعة...");
         rv.setViewVisibility(R.id.rate1, View.VISIBLE);
         rv.setTextViewText(R.id.rate1, "جارٍ تحديث العملات...");
         rv.setTextViewText(R.id.footer, "");
@@ -133,7 +178,7 @@ public class MatchRatesWidget extends AppWidgetProvider {
 
         if (matches.isEmpty()) {
             rv.setViewVisibility(MATCH_IDS[0], View.VISIBLE);
-            rv.setTextViewText(MATCH_IDS[0], "لا توجد مباريات اليوم");
+            rv.setTextViewText(MATCH_IDS[0], "لا توجد مباريات ضمن متابعتك اليوم");
             return;
         }
 
@@ -174,15 +219,75 @@ public class MatchRatesWidget extends AppWidgetProvider {
     }
 
     private static List<String> loadMatches() throws Exception {
-        List<MatchRow> rows = new ArrayList<>();
-
         SimpleDateFormat day = new SimpleDateFormat("yyyyMMdd", Locale.US);
         day.setTimeZone(TimeZone.getTimeZone("Asia/Riyadh"));
-        String date = day.format(new Date());
+        final String date = day.format(new Date());
 
-        String body = get("https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=" + date);
+        List<SourceRequest> requests = new ArrayList<>();
+        requests.add(new SourceRequest("all", true));
+
+        for (String league : TEAM_FALLBACK_COMPETITIONS) {
+            requests.add(new SourceRequest(league, true));
+        }
+        for (String league : TRACKED_COMPETITIONS) {
+            requests.add(new SourceRequest(league, false));
+        }
+
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        List<Callable<SourceResult>> tasks = new ArrayList<>();
+
+        for (SourceRequest request : requests) {
+            tasks.add(() -> {
+                try {
+                    String url = "https://site.api.espn.com/apis/site/v2/sports/soccer/"
+                            + request.league + "/scoreboard?dates=" + date + "&limit=1000";
+                    String body = get(url);
+                    return new SourceResult(true, parseEvents(body, request.teamOnly));
+                } catch (Exception ignored) {
+                    return new SourceResult(false, new ArrayList<>());
+                }
+            });
+        }
+
+        List<Future<SourceResult>> futures = pool.invokeAll(tasks, 9, TimeUnit.SECONDS);
+        pool.shutdownNow();
+
+        Map<String, MatchRow> unique = new LinkedHashMap<>();
+        int successfulSources = 0;
+
+        for (Future<SourceResult> future : futures) {
+            if (future.isCancelled()) continue;
+            try {
+                SourceResult result = future.get();
+                if (result.success) successfulSources++;
+                for (MatchRow row : result.rows) {
+                    unique.put(row.id, row);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (successfulSources == 0) {
+            throw new Exception("No match source available");
+        }
+
+        List<MatchRow> rows = new ArrayList<>(unique.values());
+        rows.sort((a, b) -> {
+            long at = a.startTs <= 0 ? Long.MAX_VALUE : a.startTs;
+            long bt = b.startTs <= 0 ? Long.MAX_VALUE : b.startTs;
+            return Long.compare(at, bt);
+        });
+
+        List<String> out = new ArrayList<>();
+        for (MatchRow row : rows) out.add(row.text);
+        return out;
+    }
+
+    private static List<MatchRow> parseEvents(String body, boolean teamOnly) {
+        List<MatchRow> out = new ArrayList<>();
+
         JSONArray events = new JSONObject(body).optJSONArray("events");
-        if (events == null) return new ArrayList<>();
+        if (events == null) return out;
 
         for (int i = 0; i < events.length(); i++) {
             JSONObject e = events.optJSONObject(i);
@@ -198,20 +303,23 @@ public class MatchRatesWidget extends AppWidgetProvider {
 
             JSONObject home = null;
             JSONObject away = null;
+
             for (int j = 0; j < competitors.length(); j++) {
                 JSONObject x = competitors.optJSONObject(j);
                 if (x == null) continue;
+
                 String side = x.optString("homeAway", "");
                 if ("home".equalsIgnoreCase(side)) home = x;
                 else if ("away".equalsIgnoreCase(side)) away = x;
             }
+
             if (home == null || away == null) continue;
 
-            JSONObject homeTeam = home.optJSONObject("team");
-            JSONObject awayTeam = away.optJSONObject("team");
-            String homeName = teamName(homeTeam);
-            String awayName = teamName(awayTeam);
+            String homeName = teamName(home.optJSONObject("team"));
+            String awayName = teamName(away.optJSONObject("team"));
             if (homeName.isEmpty() || awayName.isEmpty()) continue;
+
+            if (teamOnly && !isTrackedTeam(homeName, awayName)) continue;
 
             long startTs = parseEspnDate(e.optString("date", comp.optString("date", "")));
 
@@ -231,18 +339,36 @@ public class MatchRatesWidget extends AppWidgetProvider {
                 middle = formatTime(startTs);
             }
 
-            rows.add(new MatchRow(startTs, homeName + "  " + middle + "  " + awayName));
+            String eventId = e.optString("id", "");
+            if (eventId.isEmpty()) {
+                eventId = homeName + "|" + awayName + "|" + startTs;
+            }
+
+            out.add(new MatchRow(
+                    eventId,
+                    startTs,
+                    homeName + "  " + middle + "  " + awayName
+            ));
         }
 
-        rows.sort(Comparator.comparingLong(a -> a.startTs));
-
-        List<String> out = new ArrayList<>();
-        for (MatchRow row : rows) out.add(row.text);
         return out;
+    }
+
+    private static boolean isTrackedTeam(String homeName, String awayName) {
+        String haystack = (homeName + " " + awayName).toLowerCase(Locale.ROOT);
+
+        for (String[] group : TRACKED_TEAMS) {
+            for (String alias : group) {
+                if (haystack.contains(alias)) return true;
+            }
+        }
+
+        return false;
     }
 
     private static String teamName(JSONObject team) {
         if (team == null) return "";
+
         String name = team.optString("shortDisplayName", "");
         if (name.isEmpty()) name = team.optString("displayName", "");
         if (name.isEmpty()) name = team.optString("name", "");
@@ -257,21 +383,24 @@ public class MatchRatesWidget extends AppWidgetProvider {
 
     private static long parseEspnDate(String iso) {
         if (iso == null || iso.isEmpty()) return 0L;
-        try {
-            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mmX", Locale.US);
-            f.setTimeZone(TimeZone.getTimeZone("UTC"));
-            Date d = f.parse(iso);
-            return d == null ? 0L : d.getTime();
-        } catch (Exception ignored) {
+
+        String[] patterns = {
+                "yyyy-MM-dd'T'HH:mmX",
+                "yyyy-MM-dd'T'HH:mm:ssX",
+                "yyyy-MM-dd'T'HH:mm:ss.SSSX"
+        };
+
+        for (String pattern : patterns) {
             try {
-                SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX", Locale.US);
+                SimpleDateFormat f = new SimpleDateFormat(pattern, Locale.US);
                 f.setTimeZone(TimeZone.getTimeZone("UTC"));
                 Date d = f.parse(iso);
-                return d == null ? 0L : d.getTime();
-            } catch (Exception ignored2) {
-                return 0L;
+                if (d != null) return d.getTime();
+            } catch (Exception ignored) {
             }
         }
+
+        return 0L;
     }
 
     private static List<String> loadRates(String pairsRaw) throws Exception {
@@ -306,9 +435,9 @@ public class MatchRatesWidget extends AppWidgetProvider {
 
     private static String get(String urlString) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(urlString).openConnection();
-        c.setConnectTimeout(8000);
-        c.setReadTimeout(8000);
-        c.setRequestProperty("User-Agent", "MatchRatesWidget/0.3 Android");
+        c.setConnectTimeout(3500);
+        c.setReadTimeout(3500);
+        c.setRequestProperty("User-Agent", "MatchRatesWidget/0.4 Android");
         c.setRequestProperty("Accept", "application/json");
         c.setRequestProperty("Accept-Language", "ar,en;q=0.8");
 
@@ -338,6 +467,7 @@ public class MatchRatesWidget extends AppWidgetProvider {
 
     private static String formatTime(long millis) {
         if (millis <= 0) return "--:--";
+
         SimpleDateFormat f = new SimpleDateFormat("HH:mm", Locale.US);
         f.setTimeZone(TimeZone.getTimeZone("Asia/Riyadh"));
         return f.format(new Date(millis));
@@ -349,11 +479,33 @@ public class MatchRatesWidget extends AppWidgetProvider {
         return f.format(new Date());
     }
 
+    private static class SourceRequest {
+        final String league;
+        final boolean teamOnly;
+
+        SourceRequest(String league, boolean teamOnly) {
+            this.league = league;
+            this.teamOnly = teamOnly;
+        }
+    }
+
+    private static class SourceResult {
+        final boolean success;
+        final List<MatchRow> rows;
+
+        SourceResult(boolean success, List<MatchRow> rows) {
+            this.success = success;
+            this.rows = rows;
+        }
+    }
+
     private static class MatchRow {
+        final String id;
         final long startTs;
         final String text;
 
-        MatchRow(long startTs, String text) {
+        MatchRow(String id, long startTs, String text) {
+            this.id = id;
             this.startTs = startTs;
             this.text = text;
         }
