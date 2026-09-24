@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="14dp"
+    android:padding="12dp"
     android:background="@drawable/widget_bg"
     android:gravity="end"
     android:layoutDirection="rtl">
@@ -21,7 +21,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="مبارياتي والعملات"
+            android:text="مباريات اليوم والعملات"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
             android:textSize="16sp"
@@ -41,17 +41,21 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="⚽ مباريات اليوم"
+        android:text="⚽ كل مباريات اليوم"
         android:textColor="#9FC3FF"
         android:textStyle="bold"
         android:textSize="13sp"
-        android:paddingTop="2dp"
+        android:paddingTop="1dp"
         android:gravity="start" />
 
     <TextView android:id="@+id/match1" style="@style/WidgetLine" />
     <TextView android:id="@+id/match2" style="@style/WidgetLine" />
     <TextView android:id="@+id/match3" style="@style/WidgetLine" />
     <TextView android:id="@+id/match4" style="@style/WidgetLine" />
+    <TextView android:id="@+id/match5" style="@style/WidgetLine" />
+    <TextView android:id="@+id/match6" style="@style/WidgetLine" />
+    <TextView android:id="@+id/match7" style="@style/WidgetLine" />
+    <TextView android:id="@+id/match8" style="@style/WidgetLine" />
 
     <TextView
         android:layout_width="match_parent"
@@ -60,7 +64,7 @@
         android:textColor="#9FC3FF"
         android:textStyle="bold"
         android:textSize="13sp"
-        android:paddingTop="8dp"
+        android:paddingTop="6dp"
         android:gravity="start" />
 
     <TextView android:id="@+id/rate1" style="@style/WidgetLine" />
@@ -75,6 +79,6 @@
         android:text="اضغط ↻ للتحديث"
         android:textColor="#8090A8"
         android:textSize="10sp"
-        android:paddingTop="6dp"
+        android:paddingTop="5dp"
         android:gravity="start" />
 </LinearLayout>
