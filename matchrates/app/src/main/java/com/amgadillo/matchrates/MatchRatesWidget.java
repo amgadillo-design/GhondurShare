@@ -19,6 +19,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -26,7 +27,11 @@ import java.util.TimeZone;
 
 public class MatchRatesWidget extends AppWidgetProvider {
     public static final String ACTION_REFRESH = "com.amgadillo.matchrates.REFRESH";
-    private static final int[] MATCH_IDS = {R.id.match1, R.id.match2, R.id.match3, R.id.match4};
+
+    private static final int[] MATCH_IDS = {
+            R.id.match1, R.id.match2, R.id.match3, R.id.match4,
+            R.id.match5, R.id.match6, R.id.match7, R.id.match8
+    };
     private static final int[] RATE_IDS = {R.id.rate1, R.id.rate2, R.id.rate3, R.id.rate4};
 
     public static void requestRefresh(Context context) {
@@ -67,7 +72,7 @@ public class MatchRatesWidget extends AppWidgetProvider {
         String error = null;
 
         try {
-            matches = loadMatches(prefs.getString("teams", ""));
+            matches = loadMatches();
         } catch (Exception e) {
             matches = new ArrayList<>();
             error = "تعذر تحديث المباريات";
@@ -82,47 +87,85 @@ public class MatchRatesWidget extends AppWidgetProvider {
 
         for (int id : ids) {
             RemoteViews rv = baseViews(context);
-            fillLines(rv, MATCH_IDS, matches, "لا توجد مباريات للفرق المحددة اليوم");
+            fillMatchLines(rv, matches);
             fillLines(rv, RATE_IDS, rates, "لا توجد أزواج عملات صالحة");
-            rv.setTextViewText(R.id.footer, error == null ? "آخر تحديث: " + nowTime() : error + " • اضغط ↻");
+            String footer = error == null
+                    ? "مباريات اليوم: " + matches.size() + " • آخر تحديث: " + nowTime()
+                    : error + " • اضغط ↻";
+            rv.setTextViewText(R.id.footer, footer);
             manager.updateAppWidget(id, rv);
         }
     }
 
     private static RemoteViews baseViews(Context context) {
         RemoteViews rv = new RemoteViews(context.getPackageName(), R.layout.widget_match_rates);
+
         Intent refreshIntent = new Intent(context, MatchRatesWidget.class);
         refreshIntent.setAction(ACTION_REFRESH);
-        PendingIntent pi = PendingIntent.getBroadcast(context, 11, refreshIntent,
+        PendingIntent refreshPi = PendingIntent.getBroadcast(context, 11, refreshIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        rv.setOnClickPendingIntent(R.id.refresh, pi);
+        rv.setOnClickPendingIntent(R.id.refresh, refreshPi);
 
         Intent openIntent = new Intent(context, MainActivity.class);
         PendingIntent openPi = PendingIntent.getActivity(context, 12, openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         rv.setOnClickPendingIntent(R.id.title, openPi);
+
         return rv;
     }
 
     private static RemoteViews loadingViews(Context context) {
         RemoteViews rv = baseViews(context);
+
         for (int id : MATCH_IDS) rv.setViewVisibility(id, View.GONE);
         for (int id : RATE_IDS) rv.setViewVisibility(id, View.GONE);
+
         rv.setViewVisibility(R.id.match1, View.VISIBLE);
-        rv.setTextViewText(R.id.match1, "جارٍ تحديث المباريات...");
+        rv.setTextViewText(R.id.match1, "جارٍ تحديث كل مباريات اليوم...");
         rv.setViewVisibility(R.id.rate1, View.VISIBLE);
         rv.setTextViewText(R.id.rate1, "جارٍ تحديث العملات...");
         rv.setTextViewText(R.id.footer, "");
         return rv;
     }
 
+    private static void fillMatchLines(RemoteViews rv, List<String> matches) {
+        for (int id : MATCH_IDS) rv.setViewVisibility(id, View.GONE);
+
+        if (matches.isEmpty()) {
+            rv.setViewVisibility(MATCH_IDS[0], View.VISIBLE);
+            rv.setTextViewText(MATCH_IDS[0], "لا توجد مباريات اليوم");
+            return;
+        }
+
+        int visible = Math.min(MATCH_IDS.length, matches.size());
+        int regularLines = visible;
+
+        if (matches.size() > MATCH_IDS.length) {
+            regularLines = MATCH_IDS.length - 1;
+        }
+
+        for (int i = 0; i < regularLines; i++) {
+            rv.setViewVisibility(MATCH_IDS[i], View.VISIBLE);
+            rv.setTextViewText(MATCH_IDS[i], matches.get(i));
+        }
+
+        if (matches.size() > MATCH_IDS.length) {
+            int remaining = matches.size() - regularLines;
+            int lastId = MATCH_IDS[MATCH_IDS.length - 1];
+            rv.setViewVisibility(lastId, View.VISIBLE);
+            rv.setTextViewText(lastId, "… +" + remaining + " مباراة أخرى");
+        }
+    }
+
     private static void fillLines(RemoteViews rv, int[] ids, List<String> lines, String emptyMessage) {
         for (int id : ids) rv.setViewVisibility(id, View.GONE);
+
         if (lines.isEmpty()) {
             rv.setViewVisibility(ids[0], View.VISIBLE);
             rv.setTextViewText(ids[0], emptyMessage);
             return;
         }
+
         int count = Math.min(ids.length, lines.size());
         for (int i = 0; i < count; i++) {
             rv.setViewVisibility(ids[i], View.VISIBLE);
@@ -130,77 +173,73 @@ public class MatchRatesWidget extends AppWidgetProvider {
         }
     }
 
-    private static List<String> loadMatches(String teamsRaw) throws Exception {
-        List<String> out = new ArrayList<>();
-        List<String> filters = new ArrayList<>();
-        for (String s : teamsRaw.split("[,;\\n]+")) {
-            String t = s.trim().toLowerCase(Locale.ROOT);
-            if (!t.isEmpty()) filters.add(t);
-        }
-        if (filters.isEmpty()) {
-            out.add("افتح التطبيق وحدد الفرق التي تتابعها");
-            return out;
-        }
+    private static List<String> loadMatches() throws Exception {
+        List<MatchRow> rows = new ArrayList<>();
 
         SimpleDateFormat day = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
         day.setTimeZone(TimeZone.getTimeZone("Asia/Riyadh"));
         String date = day.format(new Date());
+
         String body = get("https://api.sofascore.com/api/v1/sport/football/scheduled-events/" + date);
         JSONArray events = new JSONObject(body).optJSONArray("events");
-        if (events == null) return out;
+        if (events == null) return new ArrayList<>();
 
-        for (int i = 0; i < events.length() && out.size() < 4; i++) {
+        for (int i = 0; i < events.length(); i++) {
             JSONObject e = events.optJSONObject(i);
             if (e == null) continue;
+
             JSONObject home = e.optJSONObject("homeTeam");
             JSONObject away = e.optJSONObject("awayTeam");
             String homeName = home == null ? "" : home.optString("name", "");
             String awayName = away == null ? "" : away.optString("name", "");
-            String haystack = (homeName + " " + awayName + " " +
-                    (home == null ? "" : home.optString("slug", "")) + " " +
-                    (away == null ? "" : away.optString("slug", ""))).toLowerCase(Locale.ROOT);
-
-            boolean wanted = false;
-            for (String filter : filters) {
-                if (haystack.contains(filter)) {
-                    wanted = true;
-                    break;
-                }
-            }
-            if (!wanted) continue;
+            if (homeName.isEmpty() || awayName.isEmpty()) continue;
 
             JSONObject status = e.optJSONObject("status");
             String type = status == null ? "" : status.optString("type", "");
             long startTs = e.optLong("startTimestamp", 0L) * 1000L;
-            String suffix;
+            String middle;
 
             JSONObject hs = e.optJSONObject("homeScore");
             JSONObject as = e.optJSONObject("awayScore");
             boolean hasScore = hs != null && as != null && hs.has("current") && as.has("current");
+
             if (hasScore && !"notstarted".equalsIgnoreCase(type)) {
-                suffix = hs.optInt("current", 0) + " - " + as.optInt("current", 0);
-                if ("finished".equalsIgnoreCase(type)) suffix += " • انتهت";
-                else suffix += " • مباشر";
+                middle = hs.optInt("current", 0) + " - " + as.optInt("current", 0);
+                if ("finished".equalsIgnoreCase(type)) middle += " • انتهت";
+                else middle += " • مباشر";
             } else {
-                suffix = formatTime(startTs);
+                middle = formatTime(startTs);
             }
-            out.add(homeName + "  " + suffix + "  " + awayName);
+
+            rows.add(new MatchRow(startTs, homeName + "  " + middle + "  " + awayName));
         }
+
+        rows.sort(Comparator.comparingLong(a -> a.startTs));
+
+        List<String> out = new ArrayList<>();
+        for (MatchRow row : rows) out.add(row.text);
         return out;
     }
 
     private static List<String> loadRates(String pairsRaw) throws Exception {
         List<String> out = new ArrayList<>();
         String[] pairs = pairsRaw.split("[,;\\n]+");
+
         for (String p : pairs) {
             if (out.size() >= 4) break;
+
             String cleaned = p.trim().toUpperCase(Locale.ROOT).replace("-", "/").replace(" ", "");
             String[] parts = cleaned.split("/");
             if (parts.length != 2 || parts[0].length() != 3 || parts[1].length() != 3) continue;
+
             try {
-                String body = get("https://api.frankfurter.dev/v2/rate/" + parts[0].toLowerCase(Locale.ROOT) + "/" + parts[1].toLowerCase(Locale.ROOT));
+                String body = get("https://api.frankfurter.dev/v2/rate/"
+                        + parts[0].toLowerCase(Locale.ROOT) + "/"
+                        + parts[1].toLowerCase(Locale.ROOT));
+
                 JSONObject obj = new JSONObject(body);
                 double rate = obj.optDouble("rate", Double.NaN);
+
                 if (!Double.isNaN(rate)) {
                     out.add(parts[0] + "/" + parts[1] + "   " + formatRate(rate));
                 }
@@ -208,6 +247,7 @@ public class MatchRatesWidget extends AppWidgetProvider {
                 out.add(parts[0] + "/" + parts[1] + "   --");
             }
         }
+
         return out;
     }
 
@@ -215,16 +255,20 @@ public class MatchRatesWidget extends AppWidgetProvider {
         HttpURLConnection c = (HttpURLConnection) new URL(urlString).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(8000);
-        c.setRequestProperty("User-Agent", "MatchRatesWidget/0.1 Android");
+        c.setRequestProperty("User-Agent", "MatchRatesWidget/0.2 Android");
         c.setRequestProperty("Accept", "application/json");
         c.setRequestProperty("Accept-Language", "ar,en;q=0.8");
+
         try {
             int code = c.getResponseCode();
             if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
+
             BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"));
             StringBuilder sb = new StringBuilder();
             String line;
+
             while ((line = r.readLine()) != null) sb.append(line);
+
             r.close();
             return sb.toString();
         } finally {
@@ -250,5 +294,15 @@ public class MatchRatesWidget extends AppWidgetProvider {
         SimpleDateFormat f = new SimpleDateFormat("HH:mm", Locale.US);
         f.setTimeZone(TimeZone.getTimeZone("Asia/Riyadh"));
         return f.format(new Date());
+    }
+
+    private static class MatchRow {
+        final long startTs;
+        final String text;
+
+        MatchRow(long startTs, String text) {
+            this.startTs = startTs;
+            this.text = text;
+        }
     }
 }
