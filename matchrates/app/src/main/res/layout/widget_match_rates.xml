@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="14dp"
+    android:background="@drawable/widget_bg"
+    android:gravity="end"
+    android:layoutDirection="rtl">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layoutDirection="rtl">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="مبارياتي والعملات"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:gravity="start" />
+
+        <TextView
+            android:id="@+id/refresh"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:gravity="center"
+            android:text="↻"
+            android:textColor="#9FC3FF"
+            android:textSize="24sp"
+            android:contentDescription="تحديث" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⚽ مباريات اليوم"
+        android:textColor="#9FC3FF"
+        android:textStyle="bold"
+        android:textSize="13sp"
+        android:paddingTop="2dp"
+        android:gravity="start" />
+
+    <TextView android:id="@+id/match1" style="@style/WidgetLine" />
+    <TextView android:id="@+id/match2" style="@style/WidgetLine" />
+    <TextView android:id="@+id/match3" style="@style/WidgetLine" />
+    <TextView android:id="@+id/match4" style="@style/WidgetLine" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="💱 العملات"
+        android:textColor="#9FC3FF"
+        android:textStyle="bold"
+        android:textSize="13sp"
+        android:paddingTop="8dp"
+        android:gravity="start" />
+
+    <TextView android:id="@+id/rate1" style="@style/WidgetLine" />
+    <TextView android:id="@+id/rate2" style="@style/WidgetLine" />
+    <TextView android:id="@+id/rate3" style="@style/WidgetLine" />
+    <TextView android:id="@+id/rate4" style="@style/WidgetLine" />
+
+    <TextView
+        android:id="@+id/footer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="اضغط ↻ للتحديث"
+        android:textColor="#8090A8"
+        android:textSize="10sp"
+        android:paddingTop="6dp"
+        android:gravity="start" />
+</LinearLayout>
