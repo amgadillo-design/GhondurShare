@@ -176,11 +176,11 @@ public class MatchRatesWidget extends AppWidgetProvider {
     private static List<String> loadMatches() throws Exception {
         List<MatchRow> rows = new ArrayList<>();
 
-        SimpleDateFormat day = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+        SimpleDateFormat day = new SimpleDateFormat("yyyyMMdd", Locale.US);
         day.setTimeZone(TimeZone.getTimeZone("Asia/Riyadh"));
         String date = day.format(new Date());
 
-        String body = get("https://api.sofascore.com/api/v1/sport/football/scheduled-events/" + date);
+        String body = get("https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=" + date);
         JSONArray events = new JSONObject(body).optJSONArray("events");
         if (events == null) return new ArrayList<>();
 
@@ -188,25 +188,45 @@ public class MatchRatesWidget extends AppWidgetProvider {
             JSONObject e = events.optJSONObject(i);
             if (e == null) continue;
 
-            JSONObject home = e.optJSONObject("homeTeam");
-            JSONObject away = e.optJSONObject("awayTeam");
-            String homeName = home == null ? "" : home.optString("name", "");
-            String awayName = away == null ? "" : away.optString("name", "");
+            JSONArray competitions = e.optJSONArray("competitions");
+            if (competitions == null || competitions.length() == 0) continue;
+            JSONObject comp = competitions.optJSONObject(0);
+            if (comp == null) continue;
+
+            JSONArray competitors = comp.optJSONArray("competitors");
+            if (competitors == null || competitors.length() < 2) continue;
+
+            JSONObject home = null;
+            JSONObject away = null;
+            for (int j = 0; j < competitors.length(); j++) {
+                JSONObject x = competitors.optJSONObject(j);
+                if (x == null) continue;
+                String side = x.optString("homeAway", "");
+                if ("home".equalsIgnoreCase(side)) home = x;
+                else if ("away".equalsIgnoreCase(side)) away = x;
+            }
+            if (home == null || away == null) continue;
+
+            JSONObject homeTeam = home.optJSONObject("team");
+            JSONObject awayTeam = away.optJSONObject("team");
+            String homeName = teamName(homeTeam);
+            String awayName = teamName(awayTeam);
             if (homeName.isEmpty() || awayName.isEmpty()) continue;
 
-            JSONObject status = e.optJSONObject("status");
-            String type = status == null ? "" : status.optString("type", "");
-            long startTs = e.optLong("startTimestamp", 0L) * 1000L;
+            long startTs = parseEspnDate(e.optString("date", comp.optString("date", "")));
+
+            JSONObject status = comp.optJSONObject("status");
+            JSONObject statusType = status == null ? null : status.optJSONObject("type");
+            String state = statusType == null ? "" : statusType.optString("state", "");
+            String shortDetail = statusType == null ? "" : statusType.optString("shortDetail", "");
+
             String middle;
-
-            JSONObject hs = e.optJSONObject("homeScore");
-            JSONObject as = e.optJSONObject("awayScore");
-            boolean hasScore = hs != null && as != null && hs.has("current") && as.has("current");
-
-            if (hasScore && !"notstarted".equalsIgnoreCase(type)) {
-                middle = hs.optInt("current", 0) + " - " + as.optInt("current", 0);
-                if ("finished".equalsIgnoreCase(type)) middle += " • انتهت";
+            if ("in".equalsIgnoreCase(state)) {
+                middle = score(home) + " - " + score(away);
+                if (!shortDetail.isEmpty()) middle += " • " + shortDetail;
                 else middle += " • مباشر";
+            } else if ("post".equalsIgnoreCase(state)) {
+                middle = score(home) + " - " + score(away) + " • انتهت";
             } else {
                 middle = formatTime(startTs);
             }
@@ -219,6 +239,39 @@ public class MatchRatesWidget extends AppWidgetProvider {
         List<String> out = new ArrayList<>();
         for (MatchRow row : rows) out.add(row.text);
         return out;
+    }
+
+    private static String teamName(JSONObject team) {
+        if (team == null) return "";
+        String name = team.optString("shortDisplayName", "");
+        if (name.isEmpty()) name = team.optString("displayName", "");
+        if (name.isEmpty()) name = team.optString("name", "");
+        return name;
+    }
+
+    private static String score(JSONObject competitor) {
+        if (competitor == null) return "0";
+        String s = competitor.optString("score", "");
+        return s.isEmpty() ? "0" : s;
+    }
+
+    private static long parseEspnDate(String iso) {
+        if (iso == null || iso.isEmpty()) return 0L;
+        try {
+            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mmX", Locale.US);
+            f.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date d = f.parse(iso);
+            return d == null ? 0L : d.getTime();
+        } catch (Exception ignored) {
+            try {
+                SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX", Locale.US);
+                f.setTimeZone(TimeZone.getTimeZone("UTC"));
+                Date d = f.parse(iso);
+                return d == null ? 0L : d.getTime();
+            } catch (Exception ignored2) {
+                return 0L;
+            }
+        }
     }
 
     private static List<String> loadRates(String pairsRaw) throws Exception {
@@ -255,7 +308,7 @@ public class MatchRatesWidget extends AppWidgetProvider {
         HttpURLConnection c = (HttpURLConnection) new URL(urlString).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(8000);
-        c.setRequestProperty("User-Agent", "MatchRatesWidget/0.2 Android");
+        c.setRequestProperty("User-Agent", "MatchRatesWidget/0.3 Android");
         c.setRequestProperty("Accept", "application/json");
         c.setRequestProperty("Accept-Language", "ar,en;q=0.8");
 
