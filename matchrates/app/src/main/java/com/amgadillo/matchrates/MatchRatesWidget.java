@@ -283,7 +283,7 @@ public class MatchRatesWidget extends AppWidgetProvider {
         return out;
     }
 
-    private static List<MatchRow> parseEvents(String body, boolean teamOnly) {
+    private static List<MatchRow> parseEvents(String body, boolean teamOnly) throws Exception {
         List<MatchRow> out = new ArrayList<>();
 
         JSONArray events = new JSONObject(body).optJSONArray("events");
